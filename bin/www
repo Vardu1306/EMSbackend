@@ -1,0 +1,105 @@
+
+
+const app = require("../app");
+const debug = require("debug")("emsbackend:server");
+const http = require("http");
+
+const { ApolloServer } = require("@apollo/server");
+const { expressMiddleware } = require("@as-integrations/express4");
+
+const typeDefs = require("../graphql/schema");
+const resolvers = require("../graphql/resolvers");
+
+const protect = require("../middleware/auth.middleware");
+const authorize = require("../middleware/role.middleware");
+
+require("dotenv").config();
+
+const port = normalizePort(process.env.PORT || "2020");
+app.set("port", port);
+
+const server = http.createServer(app);
+
+const formatGraphQLError = require("../graphql/errorHandler");
+
+const apolloServer = new ApolloServer({
+    typeDefs,
+    resolvers,
+    formatError: formatGraphQLError
+});
+async function startServer() {
+    try {
+        // Start Apollo Server
+        await apolloServer.start();
+
+        // Protect GraphQL with existing authentication
+        app.use(
+            "/graphql",
+            protect,
+            authorize("Admin", "HR"),
+            expressMiddleware(apolloServer)
+        );
+
+        console.log("GraphQL Server Started");
+
+        // Start Express HTTP server
+        server.listen(port);
+        server.on("error", onError);
+        server.on("listening", onListening);
+
+    } catch (error) {
+        console.error("Server Startup Failed:", error);
+        process.exit(1);
+    }
+}
+
+function normalizePort(val) {
+    const port = parseInt(val, 10);
+
+    if (isNaN(port)) {
+        return val;
+    }
+
+    if (port >= 0) {
+        return port;
+    }
+
+    return false;
+}
+
+function onError(error) {
+    if (error.syscall !== "listen") {
+        throw error;
+    }
+
+    const bind = typeof port === "string"
+        ? "Pipe " + port
+        : "Port " + port;
+
+    switch (error.code) {
+        case "EACCES":
+            console.error(bind + " requires elevated privileges");
+            process.exit(1);
+            break;
+
+        case "EADDRINUSE":
+            console.error(bind + " is already in use");
+            process.exit(1);
+            break;
+
+        default:
+            throw error;
+    }
+}
+
+function onListening() {
+    const addr = server.address();
+
+    const bind = typeof addr === "string"
+        ? "pipe " + addr
+        : "port " + addr.port;
+
+    debug("Listening on " + bind);
+}
+
+startServer();
